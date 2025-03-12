@@ -1,3 +1,4 @@
+#python3 inward_preprocessing.py -t <file_with_jpg_images_complete_path> -i <folder_with_jpg_images> -o <folder_path_to_dump_raw_images> -l <input_list>
 import os
 import cv2
 import argparse
