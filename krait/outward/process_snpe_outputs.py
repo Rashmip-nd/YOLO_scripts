@@ -1,3 +1,9 @@
+# Command for PTQ
+# python3 process_snpe_outputs.py -i <snpe_inference_output_folder> -l <imageset> -o <folder_to_dump_renamed_output_images> -q ptq
+
+# Command for QAT
+# python3 process_snpe_outputs -i <snpe_inference_output_folder> -l <imageset> -o <folder_to_dump_renamed_output_images> -q qat -op1 <output1>.raw -op2 <output2>.raw -op3 <output3>.raw
+
 import os
 import re
 import time
@@ -7,13 +13,21 @@ from shutil import copy
 
 parser = argparse.ArgumentParser(description='Rename output raw folder as per the annotation of dataset')
 parser.add_argument('-i', '--input_folder', help='File containing output raw images', required=True)
-parser.add_argument('-l', '--input_list', help='File containing image names', required=True)
+parser.add_argument('-l', '--imageset', help='File containing image names without complete path and extension', required=True)
 parser.add_argument('-o', '--output_folder', help='Folder to dump the raw output file', required=True)
+parser.add_argument('-q', '--quant_type', help='ptq/qat type of quantization', required=True)
+parser.add_argument('-op1', '--output1', help='first output layer name if quant_type is qat', required=False)
+parser.add_argument('-op2', '--output2', help='second output layer name if quant_type is qat', required=False)
+parser.add_argument('-op3', '--output3', help='third output layer name if quant_type is qat', required=False)
 args = parser.parse_args()
 
 input_folder = os.path.abspath(args.input_folder)
-input_list = os.path.abspath(args.input_list)
+imageset = os.path.abspath(args.imageset)
 output_folder = os.path.abspath(args.output_folder)
+quant_type = str(args.quant_type)
+output1 = str(args.output1)
+output2 = str(args.output2)
+output3 = str(args.output3)
 
 nc = 14 # num classes
 
@@ -49,32 +63,31 @@ prediction_shape = (1, 15120, 19)
 # output2 = 'Conv_output_01.raw'
 # output3 = 'Conv_output_02.raw'
 
-output1 = '1047.raw'
-output2 = '1066.raw'
-output3 = '1085.raw'
+# output1 = '1047.raw'
+# output2 = '1066.raw'
+# output3 = '1085.raw'
 
 # Define the sigmoid function
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-def additional_postprocessing_snpe(pred1, pred2, pred3, quant):
-	if quant == 'qat':
-		#AIMET QAT postprocessing
-		pred1 = pred1.reshape(shape1_1)
-		pred2 = pred2.reshape(shape2_1)
-		pred3 = pred3.reshape(shape3_1)
+def additional_postprocessing_snpe(pred1, pred2, pred3):
+	#AIMET QAT postprocessing
+	pred1 = pred1.reshape(shape1_1)
+	pred2 = pred2.reshape(shape2_1)
+	pred3 = pred3.reshape(shape3_1)
 
-		pred1= np.transpose(pred1, (0, 3, 1, 2))
-		pred2= np.transpose(pred2, (0, 3, 1, 2))
-		pred3= np.transpose(pred3, (0, 3, 1, 2))
+	pred1= np.transpose(pred1, (0, 3, 1, 2))
+	pred2= np.transpose(pred2, (0, 3, 1, 2))
+	pred3= np.transpose(pred3, (0, 3, 1, 2))
 
-		pred1 = pred1.reshape(shape1_3)
-		pred2 = pred2.reshape(shape2_3)
-		pred3 = pred3.reshape(shape3_3)
+	pred1 = pred1.reshape(shape1_3)
+	pred2 = pred2.reshape(shape2_3)
+	pred3 = pred3.reshape(shape3_3)
 
-		pred1= np.transpose(pred1, (0, 2, 3, 1))
-		pred2= np.transpose(pred2, (0, 2, 3, 1))
-		pred3= np.transpose(pred3, (0, 2, 3, 1))
+	pred1= np.transpose(pred1, (0, 2, 3, 1))
+	pred2= np.transpose(pred2, (0, 2, 3, 1))
+	pred3= np.transpose(pred3, (0, 2, 3, 1))
 		
 	pred1 = pred1.reshape(shape1)
 	pred2 = pred2.reshape(shape2)
@@ -87,8 +100,8 @@ def additional_postprocessing_snpe(pred1, pred2, pred3, quant):
 	return final_pred
 
 
-def load_images_from_folder(input_folder, input_list, output_folder):
-	ip_file_object = open(input_list, "r")
+def load_images_from_folder(input_folder, imageset, output_folder):
+	ip_file_object = open(imageset, "r")
 	ip_read_lines = ip_file_object.readlines()
 
 	image_name_list = []
@@ -114,34 +127,34 @@ def load_images_from_folder(input_folder, input_list, output_folder):
 		print("Reading folder : ", op_folder)
 		result_path = os.path.join(input_folder, op_folder)
 		if 'Result' in result_path:
-			predpath1 = os.path.join(result_path, output1)
-			predpath2 = os.path.join(result_path, output2)
-			predpath3 = os.path.join(result_path, output3)
-			print(predpath1)
-			print(predpath2)
-			print(predpath3)
-			
-			pred1 = np.fromfile(predpath1, dtype=np.float32)
-			pred2 = np.fromfile(predpath2, dtype=np.float32)
-			pred3 = np.fromfile(predpath3, dtype=np.float32)
-			
-			prediction_np = additional_postprocessing_snpe(pred1, pred2, pred3, '')
-			print(prediction_np.shape)
-
-			prediction_np = prediction_np.reshape(prediction_shape[0]*prediction_shape[1]*prediction_shape[2])
-
 			raw_image_name = image_name_list[i] + '.raw'
 			i+=1
 
-			prediction_np.tofile(os.path.join(output_folder,raw_image_name))
-			
-			# for raw_file in os.listdir(result_path):
-			# 	print("raw_file : ", os.path.join(result_path,raw_file))
-			# 	copy(os.path.join(result_path,raw_file), os.path.join(output_folder,raw_image_name))
-			# 	#os.rename(os.path.join(result_path,raw_file), )
-			# 	break
+			if quant_type == 'qat':
+				predpath1 = os.path.join(result_path, output1)
+				predpath2 = os.path.join(result_path, output2)
+				predpath3 = os.path.join(result_path, output3)
+				print(predpath1)
+				print(predpath2)
+				print(predpath3)
+				
+				pred1 = np.fromfile(predpath1, dtype=np.float32)
+				pred2 = np.fromfile(predpath2, dtype=np.float32)
+				pred3 = np.fromfile(predpath3, dtype=np.float32)
+				
+				prediction_np = additional_postprocessing_snpe(pred1, pred2, pred3)
+				print(prediction_np.shape)
+
+				prediction_np = prediction_np.reshape(prediction_shape[0]*prediction_shape[1]*prediction_shape[2])
+
+				prediction_np.tofile(os.path.join(output_folder,raw_image_name))
+			elif quant_type == 'ptq':
+				for raw_file in os.listdir(result_path):
+					print("raw_file : ", os.path.join(result_path,raw_file))
+					copy(os.path.join(result_path,raw_file), os.path.join(output_folder,raw_image_name))
+					break
 
 	print("Completed conversion")
 	ip_file_object.close()
 
-load_images_from_folder(input_folder, input_list, output_folder)
+load_images_from_folder(input_folder, imageset, output_folder)
