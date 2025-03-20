@@ -10,7 +10,7 @@ optional arguments:
   -m MODELNAME, --modelname MODELNAME
                         name of the onnx model (without extension)
   -p PREDNAME, --predname PREDNAME
-                        name of the prediction numpy file (without extension)
+                        name of the prediction numpy file (with extension if json file else without extension for others) 
 '''
 
 import os
@@ -21,6 +21,7 @@ import torch
 import numpy as np
 import onnxruntime
 import torchvision
+import json
 
 def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
     # Resize and pad image while meeting stride-multiple constraints
@@ -79,8 +80,9 @@ def preprocess(image_path, img_size=[384, 640]):
 
 def postprocess(image_data, img_size=[384, 640]):
     image_data_len = len(image_data)
+    print(image_data_len)
     
-    for c in range(0, image_data_len, 17):
+    for c in range(0, image_data_len, 19):
 
         if c < 4:
             print("[debug] ",image_data[c], image_data[c+1])
@@ -104,7 +106,7 @@ def postprocess(image_data, img_size=[384, 640]):
         filter_size2 = [80,40,20]
 
         stride = 0
-        ci = int(((c+4)/17));
+        ci = int(((c+4)/19));
         
         if ci<num_filters[0]:
             gridX = (ci%(filter_size1[0]*filter_size2[0]))%filter_size2[0]
@@ -186,9 +188,12 @@ def non_max_suppression(prediction,
          list of detections, on (n,6) tensor per image [xyxy, conf, cls]
     """
 
+    print("prediction.shape : ", prediction.shape)
+
     bs = prediction.shape[0]  # batch size
     nc = prediction.shape[2] - 5  # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
+    print("xc : ", xc)
 
     # Checks
     assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
@@ -205,6 +210,7 @@ def non_max_suppression(prediction,
 
     t = time.time()
     output = [torch.zeros((0, 6), device=prediction.device)] * bs
+    
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
@@ -212,6 +218,7 @@ def non_max_suppression(prediction,
 
         # Cat apriori labels if autolabelling
         if labels and len(labels[xi]):
+            print("if labels")
             lb = labels[xi]
             v = torch.zeros((len(lb), nc + 5), device=x.device)
             v[:, :4] = lb[:, 1:5]  # box
@@ -220,7 +227,7 @@ def non_max_suppression(prediction,
             x = torch.cat((x, v), 0)
 
         # If none remain process next image
-        if not x.shape[0]:
+        if not x.shape[0]: 
             continue
 
         # Compute conf
@@ -336,9 +343,10 @@ def run(dirpath = "/data/raviprasad/scripts",
         prediction_np.tofile(predpath)
         prediction_shape = prediction_np.shape
         print(prediction_shape)
+
     else:
         predpath = os.path.join(dirpath, f"{predname}.raw")
-        prediction_shape = (1, 15120, 17)
+        prediction_shape = (1, 15120, 19)
         print(prediction_shape)
 
     # load npy
@@ -348,9 +356,9 @@ def run(dirpath = "/data/raviprasad/scripts",
     print('loaded raw shape: ', prediction_np.shape)
 
     # run postprocessing
-    start_time = time.clock()
+    start_time = time.perf_counter() #time.clock()
     prediction_np = postprocess(prediction_np)
-    print("TIME for DETECT ------------------------ ", time.clock() - start_time)
+    print("TIME for DETECT ------------------------ ", time.perf_counter() - start_time)
     
     prediction_np.tofile(after_detect);
 
@@ -360,7 +368,7 @@ def run(dirpath = "/data/raviprasad/scripts",
     
     # run non max suppression
     output = non_max_suppression(prediction_tensor)
-    #print('output shape ', output.shape)
+    print('output shape ', output[0].shape)
 
     # draw annotations on image
     img = resize_letterbox(imgpath)
